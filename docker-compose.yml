@@ -1,0 +1,74 @@
+version: '3.8'
+
+volumes:
+        prometheus_data: {}
+        grafana_data: {}
+        loki_data: {}
+
+secrets:
+        monitoring_grafana_admin_user:
+                external: true
+        monitoring_grafana_admin_password:
+                external: true
+        monitoring_ub_ctrl_pem:
+                external: true
+        monitoring_ub_ctrl_key:
+                external: true
+        monitoring_ub_srvr_pem:
+                external: true
+
+services:
+        prometheus:
+                image: prom/prometheus:v2.48.0
+                volumes:
+                        - ./prometheus:/etc/prometheus
+                        - prometheus_data:/prometheus
+                command:
+                        - '--config.file=/etc/prometheus/prometheus.yml'
+                        - '--storage.tsdb.path=/prometheus'
+                        - '--storage.tsdb.retention.time=168h' # 1 week
+                        - '--web.enable-lifecycle'
+                        - '--web.console.libraries=/etc/prometheus/console_libraries'
+                        - '--web.console.templates=/etc/prometheus/consoles'
+
+        grafana:
+                image: grafana/grafana:9.5.14
+                volumes:
+                        - grafana_data:/var/lib/grafana
+                        - ./grafana/provisioning:/etc/grafana/provisioning
+                environment:
+                        - GF_SECURITY_ADMIN_USER__FILE=/run/secrets/monitoring_grafana_admin_user
+                        - GF_SECURITY_ADMIN_PASSWORD__FILE=/run/secrets/monitoring_grafana_admin_password
+                        - GF_USERS_ALLOW_SIGN_UP=false
+                secrets:
+                        - monitoring_grafana_admin_user
+                        - monitoring_grafana_admin_password
+                ports:
+                        - 9000:3000
+
+        unbound-exporter:
+                image: unbound-exporter
+                command:
+                        - '--unbound.uri=tcp://192.168.1.11:953'
+                        - '--unbound.server-cert=/run/secrets/monitoring_ub_srvr_pem'
+                        - '--unbound.control-cert=/run/secrets/monitoring_ub_ctrl_pem'
+                        - '--unbound.control-key=/run/secrets/monitoring_ub_ctrl_key'
+                secrets:
+                        - monitoring_ub_ctrl_pem
+                        - monitoring_ub_ctrl_key
+                        - monitoring_ub_srvr_pem
+       
+        loki:
+                image: grafana/loki:2.9.2
+                volumes:
+                        - loki_data:/loki
+                        - ./loki/config.yml:/etc/loki/local-config.yaml
+
+        promtail:
+               image: grafana/promtail:2.9.2
+               volumes:
+                       - ./promtail/config.yml:/etc/promtail/config.yml
+               command:
+                       - '-config.file=/etc/promtail/config.yml'
+               ports:
+                       - 9010:9010

@@ -1,0 +1,39 @@
+server:
+  http_listen_port: 9080
+  grpc_listen_port: 0
+  log_level: warn
+
+positions:
+  filename: /tmp/positions.yaml
+
+clients:
+  - url: http://loki:3100/loki/api/v1/push
+
+scrape_configs:
+- job_name: unbound
+  #static_configs:
+  #- targets:
+  #    - localhost
+  #  labels:
+  #    job: unbound
+  #    __path__: /var/log/unbound/unbound.log
+  syslog:
+    listen_address: 0.0.0.0:9010
+    labels:
+            job: unbound
+  pipeline_stages:
+    - labeldrop:
+        - filename
+    - match:
+        selector: '{job="unbound"} |~ " start | stopped |.*in-addr.arpa.|wpad.internal|info:"'
+        action: drop
+    - match:
+        selector: '{job="unbound"} |= "reply:"'
+        stages:
+        - static_labels:
+            dns: reply
+    - match:
+        selector: '{job="unbound"} |= "NXDOMAIN"'
+        stages:
+        - static_labels:
+            dns: block
